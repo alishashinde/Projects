@@ -1,0 +1,87 @@
+# Load necessary libraries
+install.packages("dplyr")
+install.packages("ggplot2")
+install.packages("corrplot")
+install.packages("GGally")
+install.packages("rpart")
+install.packages("car")
+
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+library(GGally)
+library(rpart)
+library(car)
+#library(performance)
+
+# Load datasets
+log_data <- readRDS('/Applications/MSIM Assignments/DSI/Final Project DSI/Cleaned RDS/Cleaned_Log_Data.rds')
+warehouse_costs <- readRDS('/Applications/MSIM Assignments/DSI/Final Project DSI/Cleaned RDS/Cleaned_Warehouse_Shipping_Costs.rds')
+prod_costs <- readRDS('/Applications/MSIM Assignments/DSI/Final Project DSI/Cleaned RDS/Cleaned_Productions_Costs_Data.rds')
+products <- readRDS('/Applications/MSIM Assignments/DSI/Final Project DSI/Cleaned RDS/Cleaned_Products.rds')
+
+colnames(log_data)
+colnames(prod_costs)
+colnames(products)
+colnames(warehouse_costs)
+
+# Merge datasets
+merged_data <- log_data %>%
+  inner_join(prod_costs, by = c("Product_ID" = "Product_ID", "Source_Factory" = "Factory_ID")) %>%
+  inner_join(products, by = c("Product_ID" = "Product_ID")) %>%
+  inner_join(warehouse_costs, by = c("Dest_Warehouse" = "Warehouse_ID", "Source_Factory" = "Source_Factory_ID", "Product_ID" = "Product_ID"))
+
+
+# Adding new calculated variables
+merged_data <- merged_data %>%
+  mutate(
+    Return_Rate = (No_Of_Pieces_Returned / No_Of_Pieces_Sold) * 100,
+    Profit_Margin = ifelse(Selling_Price > Manufac_Cost, Selling_Price - Manufac_Cost, 0), #only profit, not loss
+    Shipping_Delay = ifelse(Shipping_Time_Actual > Shipping_Time_Expected, Shipping_Time_Actual - Shipping_Time_Expected, 0)  #handle negative values - only delay 
+  )
+
+#Creating High_Return_Rate - Binary dependent variable ( 0 or 1) - if return rate is more than 7% then 1
+merged_data <- merged_data %>% mutate(High_Return_Rate = ifelse(Return_Rate > 7, 1, 0))
+
+
+#str(merged_data) - debugging
+# Correlation Analysis
+# Select relevant columns for correlation analysis
+cor_data <- merged_data %>% select(Return_Rate, Shipping_Delay, Selling_Price, Manufac_Cost, Avg_Batch_Rating, Profit_Margin)
+cor_matrix <- cor(cor_data, use = "complete.obs")
+print(cor_matrix)
+
+# Visualize correlation matrix
+corrplot(cor_matrix, method = "circle", type = "lower", tl.col = "black", tl.srt = 45)
+
+# Linearity of Logit
+independent_vars <- merged_data %>% select(Shipping_Delay, Selling_Price, Avg_Batch_Rating, Profit_Margin, Source_Factory)
+independent_vars$Source_Factory <- as.factor(independent_vars$Source_Factory)
+logit_model <- glm(High_Return_Rate ~ ., data = cbind(independent_vars, High_Return_Rate = merged_data$High_Return_Rate), family = binomial)
+print(summary(logit_model))
+
+# Multicollinearity
+vif_vals <- vif(logit_model)
+cat("4. Variance Inflation Factor (VIF):\n")
+print(vif_vals)
+if (all(vif_vals < 8)) {
+  cat("No Multicollinearity\n")
+} else {
+  cat("High Multicollinearity detected in some variables\n")
+}
+
+log_predictions <- predict(logit_model, type = "response")
+merged_data$Predicted_Probability <- log_predictions
+merged_data$Predicted_High_Return <- ifelse(merged_data$Predicted_Probability > 0.5, 1, 0)
+
+# Confusion Matrix
+table(Actual = merged_data$High_Return_Rate, Predicted = merged_data$Predicted_High_Return)
+
+# Model Accuracy
+accuracy <- mean(merged_data$High_Return_Rate == merged_data$Predicted_High_Return)
+cat("Model Accuracy:", accuracy, "\n")
+
+# Analyze significant predictors
+cat("Significant Predictors:\n")
+significant_predictors <- summary(logit_model)$coefficients[summary(logit_model)$coefficients[, 4] < 0.05, ]
+print(significant_predictors)

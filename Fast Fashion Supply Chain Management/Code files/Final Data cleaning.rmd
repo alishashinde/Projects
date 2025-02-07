@@ -1,0 +1,352 @@
+This code is for cleaning the dataset
+
+Loading the necessary libraries
+```{r}
+# Load necessary libraries
+#install.packages("dplyr")
+#install.packages("lubridate")
+#install.packages("read")
+library(dplyr)
+library(lubridate)
+library(readr)
+```
+
+Code for Log_Data.csv and Warehousing Shipping Costs
+```{r}
+
+# Load the datasets
+log_data <- read_csv("Log Data.csv")
+
+#Changing the column names for log_data
+colnames(log_data) <- c(
+  "Date",
+  "Order_ID",
+  "Product_ID",
+  "Dest_Warehouse",
+  "Source_Factory",
+  "Shipping_Time_Expected",
+  "Shipping_Time_Actual",
+  "Delay_Risk",
+  "Total_No_Of_Pieces",
+  "No_Of_Pieces_Sold",
+  "No_Of_Pieces_Returned",
+  "Avg_Batch_Rating"
+)
+
+#Loading the dataset
+warehouse_shipping_costs <- read_csv("Warehouse Shipping Costs.csv")
+
+colnames(warehouse_shipping_costs) <- c(
+  "Warehouse_ID",
+  "Source_Factory_ID",
+  "Product_ID",
+  "Shipping_Cost"
+)
+```
+
+Checking the summary of the data file
+```{r}
+str(log_data)
+str(warehouse_shipping_costs)
+```
+
+
+
+```{r}
+
+# Standardize Key Fields: Ensure consistency in identifiers
+log_data <- log_data %>%
+  mutate(Product_ID = toupper(trimws(Product_ID)),
+         Source_Factory = toupper(trimws(`Source_Factory`)),
+         Dest_Warehouse = toupper(trimws(`Dest_Warehouse`)))
+
+
+warehouse_shipping_costs <- warehouse_shipping_costs %>%
+  mutate(Product_ID = toupper(trimws(Product_ID)),
+         Source_Factory_ID = toupper(trimws(`Source_Factory_ID`)),
+         Warehouse_ID = toupper(trimws(Warehouse_ID)))
+```
+
+
+Handling missing values
+```{r}
+# Handle Missing Values: Identify and fill in missing values in crucial fields
+# Fill missing values in 'Shipping_Time_Actual' with the mean of the column
+log_data$`Shipping_Time_Actual`[is.na(log_data$`Shipping_Time_Actual`)] <- mean(log_data$`Shipping_Time_Actual`, na.rm = TRUE)
+
+
+# Remove rows with excessive missing data (more than 50% missing values)
+log_data <- log_data[rowSums(is.na(log_data)) <= ncol(log_data) / 2, ]
+warehouse_shipping_costs <- warehouse_shipping_costs[rowSums(is.na(warehouse_shipping_costs)) <= ncol(warehouse_shipping_costs) / 2, ]
+
+```
+
+
+Identifying and addressing Outliers
+```{r}
+
+# Identify and Address Outliers: Detect and handle extreme values
+cap_outliers <- function(column) {
+  Q1 <- quantile(column, 0.25, na.rm = TRUE)
+  Q3 <- quantile(column, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  column <- ifelse(column < lower_bound, lower_bound, column)
+  column <- ifelse(column > upper_bound, upper_bound, column)
+  return(column)
+}
+
+# Columns to check for outliers in log data
+columns_to_check_log_data <- c("Selling Price", "Weight", "Shipping Cost")
+
+for (column in columns_to_check_log_data) {
+  if (column %in% colnames(log_data)) {
+    log_data[[column]] <- cap_outliers(log_data[[column]])
+  }
+}
+
+
+# Columns to check for outliers in warehouse shipping costs data
+columns_to_check_warehouse_shipping_costs <- c("Shipping Cost (per 1000 pieces)")
+
+for (column in columns_to_check_warehouse_shipping_costs) {
+  if (column %in% colnames(warehouse_shipping_costs)) {
+    warehouse_shipping_costs[[column]] <- cap_outliers(warehouse_shipping_costs[[column]])
+  }
+}
+
+
+# Convert suggested fields to factor
+log_data <- log_data %>%
+  mutate(
+    Order_ID = as.factor(Order_ID),
+    Product_ID = as.factor(Product_ID),
+    `Dest_Warehouse` = as.factor(`Dest_Warehouse`),
+    Source_Factory = as.factor(`Source_Factory`),
+    `Delay_Risk` = as.factor(`Delay_Risk`)
+  )
+# Convert suggested fields to factor
+warehouse_shipping_costs <- warehouse_shipping_costs %>%
+  mutate(
+    Warehouse_ID = as.factor(Warehouse_ID),
+    `Source_Factory_ID` = as.factor(`Source_Factory_ID`),
+    Product_ID = as.factor(Product_ID),
+  )
+
+
+
+# Save the cleaned datasets to new CSV files
+saveRDS(log_data, "Cleaned_Log_Data.rds")
+saveRDS(warehouse_shipping_costs, "Cleaned_Warehouse_Shipping_Costs.rds")
+```
+
+
+Checking the summary of Log_data and Warehousing_shipping_costs
+```{r}
+# Display the structure of the cleaned dataframes to verify changes
+str(log_data)
+str(warehouse_shipping_costs)
+```
+
+
+Code for Production costs Dataset
+
+```{r}
+
+#Production costs Dataset
+
+# Load necessary libraries
+library(dplyr)
+
+# Load the dataset
+Productions_Costs_Data <- read.csv("Production Costs.csv")
+
+colnames(Productions_Costs_Data) <- c(
+  "Factory_ID",
+  "Product_ID",
+  "Manufac_Cost"
+)
+
+str(Productions_Costs_Data)
+```
+
+```{r}
+
+# Step 1: Standardize Key Fields
+# Ensure consistency in Factory_ID and Product_ID (convert to uppercase)
+Productions_Costs_Data <- Productions_Costs_Data %>% 
+  mutate(
+    Factory_ID = toupper(Factory_ID),
+    Product_ID = toupper(Product_ID)
+  )
+
+# Step 2: Handle Missing Values
+# Identify missing values
+missing_summary <- colSums(is.na(Productions_Costs_Data))
+
+# Fill missing values for numerical columns with the mean (example for extensibility)
+Productions_Costs_Data <- Productions_Costs_Data %>% 
+  mutate(
+    Manufac_Cost = ifelse(is.na(Manufac_Cost), mean(Manufac_Cost, na.rm = TRUE), Manufac_Cost)
+  )
+
+# Remove rows with excessive missing values (if applicable)
+Productions_Costs_Data <- Productions_Costs_Data[complete.cases(Productions_Costs_Data), ]
+
+# Step 3: Identify and Address Outliers
+# Define a function to detect outliers using IQR
+outlier_detection <- function(x) {
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  return(x < lower_bound | x > upper_bound)
+}
+
+# Detect outliers in Manufac_Cost
+Productions_Costs_Data <- Productions_Costs_Data %>% 
+  mutate(
+    Manufac_Cost_Outlier = outlier_detection(Manufac_Cost)
+  )
+
+# Optionally, handle outliers (e.g., remove or cap them)
+Productions_Costs_Data <- Productions_Costs_Data %>% 
+  mutate(
+    Manufac_Cost = ifelse(Manufac_Cost_Outlier, median(Manufac_Cost, na.rm = TRUE), Manufac_Cost)
+  )
+
+# To convert into factor type
+Productions_Costs_Data <- Productions_Costs_Data %>%
+  mutate(
+    Factory_ID = as.factor(Factory_ID),
+    Product_ID = as.factor(Product_ID)
+  )
+
+# Drop the last column by assigning them to NULL
+Productions_Costs_Data$Manufac_Cost_Outlier <- NULL
+
+
+# Save the cleaned dataset
+saveRDS(Productions_Costs_Data, "Cleaned_Productions_Costs_Data.rds")
+
+# Summary
+#print("Missing Values Summary:")
+#print(missing_summary)
+
+#print("Outliers Handled:")
+#print(Productions_Costs_Data %>% select(Manufac_Cost_Outlier) %>% summary())
+
+```
+
+Checking the final summary of Production_Costs_Data
+```{r}
+str(Productions_Costs_Data)
+```
+
+
+Code for Products.csv
+```{r}
+
+# Load necessary libraries
+library(dplyr)
+
+# Load the Products_Dataset
+Product_Data <- read.csv("Products.csv")
+
+colnames(Product_Data) <- c(
+  "Product_ID",
+  "Name",
+  "Gender",
+  "Selling_Price",
+  "Weight_In_KG"
+)
+str(Product_Data)
+```
+
+```{r}
+
+# Step 1: Standardize Key Fields
+# Ensure consistency in Product_ID and Name (convert to uppercase)
+Product_Data <- Product_Data %>% 
+  mutate(Product_ID = toupper(Product_ID),
+         Name = toupper(Name))
+
+# Step 2: Handle Missing Values
+# Identify missing values
+missing_summary <- colSums(is.na(Product_Data))
+
+# Fill missing values for numerical columns with the mean (example for extensibility)
+Product_Data <- Product_Data %>% 
+  mutate(
+    Selling_Price = ifelse(is.na(Selling_Price), mean(Selling_Price, na.rm = TRUE), Selling_Price),
+    Weight_In_KG = ifelse(is.na(Weight_In_KG), mean(Weight_In_KG, na.rm = TRUE), Weight_In_KG)
+  )
+
+# Remove rows with excessive missing values (if applicable)
+Product_Data <- Product_Data[complete.cases(Product_Data), ]
+
+# Step 3: Identify and Address Outliers
+# Define a function to detect outliers using IQR
+outlier_detection <- function(x) {
+  Q1 <- quantile(x, 0.25, na.rm = TRUE)
+  Q3 <- quantile(x, 0.75, na.rm = TRUE)
+  IQR <- Q3 - Q1
+  lower_bound <- Q1 - 1.5 * IQR
+  upper_bound <- Q3 + 1.5 * IQR
+  return(x < lower_bound | x > upper_bound)
+}
+
+# Detect outliers in Selling_Price and Weight (in Kg)
+Product_Data <- Product_Data %>% 
+  mutate(
+    Selling_Price_Outlier = outlier_detection(Selling_Price),
+    Weight_Outlier = outlier_detection(Weight_In_KG)
+  )
+
+# Optionally, handle outliers (e.g., remove or cap them)
+Product_Data <- Product_Data %>% 
+  mutate(
+    Selling_Price = ifelse(Selling_Price_Outlier, median(Selling_Price, na.rm = TRUE), Selling_Price),
+    Weight_In_KG = ifelse(Weight_Outlier, median(Weight_In_KG, na.rm = TRUE), Weight_In_KG)
+  )
+
+# Converting into factor type
+Product_Data <- Product_Data %>%
+  mutate(
+    Product_ID = as.factor(Product_ID),
+    Name = as.factor(Name),
+    Gender = as.factor(Gender)
+  )
+
+# Drop the last two columns by assigning them to NULL
+Product_Data$Selling_Price_Outlier <- NULL
+Product_Data$Weight_Outlier <- NULL
+
+
+
+# Save the cleaned dataset
+saveRDS(Product_Data, "Cleaned_Products.rds")
+
+# Summary
+#print("Missing Values Summary:")
+#print(missing_summary)
+
+
+#print("Outliers Handled:")
+#print(Product_Data %>% select(Selling_Price_Outlier, Weight_Outlier) %>% summary())
+#print(Product_Data %>% select(Selling_Price_Outlier, Weight_Outlier) %>% summary())
+
+#summary(Product_Data)
+#head(Product_Data)
+```
+
+Checking the final summary of Product Data
+```{r}
+str(Product_Data)
+
+```
+
+
+

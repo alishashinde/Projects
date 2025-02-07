@@ -1,0 +1,133 @@
+```{r}
+# Load necessary libraries
+library(dplyr)
+# Load the required library
+library(ggplot2)
+library(corrplot)
+```
+
+```{r}
+log_data <- readRDS("C:/Users/91986/OneDrive/Desktop/UIUC/Study material/Fall 2024-IS 507- Data.stats and info/Dataset/Cleaned_Log_Data.rds")
+Productions_Costs_Data <- readRDS("C:/Users/91986/OneDrive/Desktop/UIUC/Study material/Fall 2024-IS 507- Data.stats and info/Dataset/Cleaned_Productions_Costs_Data.rds")
+Warehouse_Shipping_Costs <- readRDS("C:/Users/91986/OneDrive/Desktop/UIUC/Study material/Fall 2024-IS 507- Data.stats and info/Dataset/Cleaned_Warehouse_Shipping_Costs.rds")
+Products <- readRDS("C:/Users/91986/OneDrive/Desktop/UIUC/Study material/Fall 2024-IS 507- Data.stats and info/Dataset/Cleaned_Products.rds")
+str(log_data)
+str(Productions_Costs_Data)
+str(Warehouse_Shipping_Costs)
+str(Products)
+
+```
+
+
+Joining the two tables and creating new columns.
+
+```{r}
+# Join the datasets
+joined_data <- log_data %>%
+  inner_join(Productions_Costs_Data, by = c("Product_ID" = "Product_ID", "Source_Factory" = "Factory_ID")) %>%
+  inner_join(Products, by = c("Product_ID" = "Product_ID")) %>%
+  inner_join(Warehouse_Shipping_Costs, by = c("Dest_Warehouse" = "Warehouse_ID", "Source_Factory" = "Source_Factory_ID", "Product_ID" = "Product_ID"))
+joined_data <- joined_data %>%
+  mutate(Total_Cost = Manufac_Cost * Total_No_Of_Pieces)
+# Step 4: Calculate Shipping Cost 
+joined_data <- joined_data %>%
+  mutate(Total_Shipping_Cost = (Shipping_Cost / 1000) * Total_No_Of_Pieces)
+
+# Step 5: Calculate Overall Total Cost 
+joined_data <- joined_data %>%
+  mutate(Overall_Total_Cost = Total_Cost + Total_Shipping_Cost)
+
+
+```
+
+```{r}
+
+# Verify the structure of the final dataset
+str(joined_data)
+
+```
+
+```{r}
+
+# Display the first few rows of the relevant columns
+head(joined_data %>% select(Order_ID, Product_ID, Dest_Warehouse, Total_No_Of_Pieces, Total_Cost, Total_Shipping_Cost, Overall_Total_Cost))
+# Filter rows with missing values in relevant columns
+#joined_data <- joined_data %>%
+ # filter(!is.na(Manufac_Cost) & !is.na(Total_No_Of_Pieces))
+
+# Check for missing values in specific columns
+sum(is.na(joined_data$Total_Cost))  # Check for missing Total_Cost
+sum(is.na(joined_data$Total_Shipping_Cost))  # Check for missing Total_Shipping_Cost
+sum(is.na(joined_data$Overall_Total_Cost))  # Check for missing Overall_Total_Cost
+
+
+```
+
+```{r}
+# Boxplot of Overall_Total_Cost by Dest_Warehouse
+ggplot(joined_data, aes(x = Dest_Warehouse, y = Overall_Total_Cost)) +
+  geom_boxplot(outlier.color = "red", outlier.shape = 1) +
+  labs(title = "Overall Total Cost by Warehouse", 
+       x = "Destination Warehouse", 
+       y = "Overall Total Cost") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# Boxplot of Overall_Total_Cost by Source_Factory
+ggplot(joined_data, aes(x = Source_Factory, y = Overall_Total_Cost)) +
+  geom_boxplot(outlier.color = "blue", outlier.shape = 1) +
+  labs(title = "Overall Total Cost by Source Factory", 
+       x = "Source Factory", 
+       y = "Overall Total Cost")
+```
+
+```{r}
+# Scatter plot of Overall_Total_Cost vs Shipping_Time_Actual
+ggplot(joined_data, aes(x = Shipping_Time_Actual, y = Overall_Total_Cost)) +
+  geom_point(alpha = 0.5, color = "darkgreen") +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(title = "Overall Total Cost vs Shipping Time (Actual)", 
+       x = "Actual Shipping Time (Days)", 
+       y = "Overall Total Cost")
+```
+
+```{r}
+# Scatter plot of Overall_Total_Cost vs Total_No_Of_Pieces
+ggplot(joined_data, aes(x = Total_No_Of_Pieces, y = Overall_Total_Cost)) +
+  geom_point(alpha = 0.5, color = "purple") +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(title = "Overall Total Cost vs Total Number of Pieces", 
+       x = "Total Number of Pieces", 
+       y = "Overall Total Cost")
+```
+
+```{r}
+# Scatter plot of Overall_Total_Cost vs Weight_In_KG
+ggplot(joined_data, aes(x = Weight_In_KG, y = Overall_Total_Cost)) +
+  geom_point(alpha = 0.5, color = "orange") +
+  geom_smooth(method = "lm", color = "blue", se = FALSE) +
+  labs(title = "Overall Total Cost vs Product Weight", 
+       x = "Weight (in KG)", 
+       y = "Overall Total Cost")
+```
+
+```{r}
+
+# Fit the model
+model <- lm(Overall_Total_Cost ~ Shipping_Time_Actual + Dest_Warehouse + Total_No_Of_Pieces + Source_Factory+ Weight_In_KG, data = joined_data)
+
+# Summary of the model
+summary(model)
+
+```
+
+
+```{r}
+#try again with log of total cost 
+joined_data$Log_Total_Cost <- log(joined_data$Overall_Total_Cost + 1)  # Add 1 to avoid log(0)
+mr_model_log <- lm(
+  Log_Total_Cost ~ Shipping_Time_Actual + Dest_Warehouse + Total_No_Of_Pieces + Source_Factory+ Weight_In_KG, data = joined_data)
+
+summary(mr_model_log)
+```

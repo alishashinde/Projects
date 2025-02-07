@@ -1,0 +1,104 @@
+# Load required libraries
+library(dplyr)
+library(ggplot2)
+library(readr)
+library(stats)
+
+# Read the rds files
+products <- read_rds("Cleaned_Products.rds")
+production_costs <- read_rds("Cleaned_Productions_Costs_Data.rds")
+log_data <- read_rds("Cleaned_Log_Data.rds")
+
+head(log_data)
+
+# Data preparation
+profit_analysis <- products %>%
+  # Join with production costs
+  left_join(production_costs, by = "Product_ID") %>%
+  # Join with log data for sales information
+  left_join(log_data, by = "Product_ID") %>%
+  # Calculate key metrics
+  mutate(
+    profit_margin = ((Selling_Price - Manufac_Cost) / Selling_Price) * 100,
+    sales_volume = No_Of_Pieces_Sold,
+    #weight_kg = Weight
+  ) %>%
+  # Remove any NA values
+  na.omit()
+
+# Fit multiple linear regression model
+profit_model <- lm(profit_margin ~ 
+                     factor(Source_Factory) +    # Factory effects
+                     factor(Name) +              # Product category effects
+                     Gender +                    # Gender category
+                     sales_volume,              # Sales volume
+                   data = profit_analysis)
+
+# Model summary
+summary(profit_model)
+
+# Create visualizations
+# 1. Profit margins by factory
+ggplot(profit_analysis, aes(x = factor(Source_Factory), y = profit_margin)) +
+  geom_boxplot(fill = "skyblue") +
+  theme_minimal() +
+  labs(title = "Profit Margins Distribution by Factory",
+       x = "Factory",
+       y = "Profit Margin (%)")
+
+# 2. Profit margins by product category
+ggplot(profit_analysis, aes(x = reorder(Name, profit_margin), y = profit_margin)) +
+  geom_boxplot(fill = "lightgreen") +
+  theme_minimal() +
+  coord_flip() +
+  labs(title = "Profit Margins by Product Category",
+       x = "Product Category",
+       y = "Profit Margin (%)")
+
+# Calculate summary statistics
+factory_performance <- profit_analysis %>%
+  group_by(Source_Factory) %>%
+  summarise(
+    avg_margin = mean(profit_margin),
+    total_sales = sum(sales_volume),
+    n_products = n()
+  ) %>%
+  arrange(desc(avg_margin))
+
+product_performance <- profit_analysis %>%
+  group_by(Name) %>%
+  summarise(
+    avg_margin = mean(profit_margin),
+    total_sales = sum(sales_volume),
+    n_items = n()
+  ) %>%
+  arrange(desc(avg_margin))
+
+# Print top performers
+print("Top Performing Factories:")
+print(head(factory_performance))
+print("Top Performing Products:")
+print(head(product_performance))
+
+summary_model <- summary(profit_model)
+# Extract R-squared and Adjusted R-squared
+r_squared <- summary_model$r.squared
+adjusted_r_squared <- summary_model$adj.r.squared
+
+# Print the results
+cat("R-squared:", r_squared, "\n")
+cat("Adjusted R-squared:", adjusted_r_squared, "\n")
+
+cat("Residual Standard Error:", summary(profit_model)$sigma, "\n") #as small as possible
+cat("Degrees of Freedom:", summary(profit_model)$df[2], "\n") #greater than 30
+
+f_statistic <- summary_model$fstatistic[1]  # Extract F-statistic
+p_value <- pf(f_statistic,
+              df1 = summary_model$fstatistic[2],  # Numerator degrees of freedom
+              df2 = summary_model$fstatistic[3],  # Denominator degrees of freedom
+              lower.tail = FALSE)  # One-tailed test for F-distribution
+
+# Print results
+cat("F-Statistic:", f_statistic, "\n")
+cat("P-Value:", p_value, "\n")
+

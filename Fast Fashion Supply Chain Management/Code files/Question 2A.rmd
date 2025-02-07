@@ -1,0 +1,62 @@
+```{r}
+# Load necessary libraries
+library(dplyr)
+library(car)
+library(ggplot2)
+
+# Load the cleaned datasets
+log_data <- readRDS("Cleaned_Log_Data.rds")
+production_costs <- readRDS("Cleaned_Productions_Costs_Data.rds")
+product_data <- readRDS("Cleaned_Products.rds")
+
+# Merge datasets
+merged_data <- log_data %>%
+  left_join(production_costs, by = c("Product_ID", "Source_Factory" = "Factory_ID")) %>%
+  left_join(product_data, by = "Product_ID")
+
+# Calculate profit margin
+merged_data <- merged_data %>%
+  mutate(Profit_Margin = Selling_Price - Manufac_Cost)
+
+# One-way ANOVA: Product Category (Name) vs Profit Margin
+product_anova <- aov(Profit_Margin ~ Name, data = merged_data)
+summary(product_anova)
+
+# One-way ANOVA: Factory vs Profit Margin
+factory_anova <- aov(Profit_Margin ~ Source_Factory, data = merged_data)
+summary(factory_anova)
+
+# Two-way ANOVA: Product Category and Factory vs Profit Margin
+two_way_anova <- aov(Profit_Margin ~ Name + Source_Factory, data = merged_data)
+summary(two_way_anova)
+
+# Test ANOVA assumptions
+
+## 1. Homogeneity of variances
+leveneTest(Profit_Margin ~ Name, data = merged_data)
+leveneTest(Profit_Margin ~ Source_Factory, data = merged_data)
+
+## 2. Normality of residuals
+# For product category ANOVA
+qqnorm(residuals(product_anova))
+qqline(residuals(product_anova))
+#shapiro.test(residuals(product_anova))
+
+# For factory ANOVA
+qqnorm(residuals(factory_anova))
+qqline(residuals(factory_anova))
+#shapiro.test(residuals(factory_anova))
+
+## 3. Independence of observations
+# This assumption is met by the study design and cannot be tested statistically
+
+# Visualize results
+ggplot(merged_data, aes(x = Name, y = Profit_Margin)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Profit Margins by Product Category", x = "Product Category", y = "Profit Margin")
+
+ggplot(merged_data, aes(x = Source_Factory, y = Profit_Margin)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Profit Margins by Factory", x = "Factory", y = "Profit Margin")
